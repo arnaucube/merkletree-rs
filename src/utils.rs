@@ -51,13 +51,12 @@ pub fn cut_path(path: Vec<bool>, i: usize) -> Vec<bool> {
 }
 
 pub fn compare_paths(a: Vec<bool>, b: Vec<bool>) -> u32 {
-    for i in (0..a.len()-1).rev() {
+    for i in (0..a.len()).rev() {
         if a[i] != b[i] {
             return i as u32;
         }
     }
     return 999;
-
 }
 
 pub fn get_empties_between_i_and_pos(i: u32, pos: u32) -> Vec<[u8;32]> {
