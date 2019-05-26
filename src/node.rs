@@ -35,11 +35,10 @@ pub fn parse_node_bytes(b: Vec<u8>) -> TreeNode {
     }
     let child_l = &b[0..32];
     let child_r = &b[32..];
-    let n = TreeNode {
-        child_l: array_ref!(child_l, 0, 32).clone(),
-        child_r: array_ref!(child_r, 0, 32).clone(),
-    };
-    n
+    TreeNode {
+        child_l: *array_ref!(child_l, 0, 32),
+        child_r: *array_ref!(child_r, 0, 32),
+    }
 }
 
 

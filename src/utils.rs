@@ -14,13 +14,13 @@ pub fn hash_vec(b: Vec<u8>) -> [u8; 32] {
 pub fn get_path(num_levels: u32, hi: [u8;32]) -> Vec<bool> {
     let mut path = Vec::new();
     for i in (0..num_levels as usize-1).rev() {
-        path.push((hi[hi.len()-i/8-1] & (1 << i%8)) > 0);
+        path.push((hi[hi.len()-i/8-1] & (1 << (i%8))) > 0);
     }
     path
 }
 
 #[allow(dead_code)]
-pub fn calc_hash_from_leaf_and_level(until_level: u32, path: Vec<bool>, leaf_hash: [u8;32]) -> [u8;32] {
+pub fn calc_hash_from_leaf_and_level(until_level: u32, path: &[bool], leaf_hash: [u8;32]) -> [u8;32] {
     let mut node_curr_lvl = leaf_hash;
     for i in 0..until_level {
         if path[i as usize] {
@@ -40,23 +40,23 @@ pub fn calc_hash_from_leaf_and_level(until_level: u32, path: Vec<bool>, leaf_has
     node_curr_lvl
 }
 
-pub fn cut_path(path: Vec<bool>, i: usize) -> Vec<bool> {
+pub fn cut_path(path: &[bool], i: usize) -> Vec<bool> {
     let mut path_res: Vec<bool> = Vec::new();
-    for j in 0..path.len() {
+    for (j, path_elem) in path.iter().enumerate() {
         if j >= i {
-            path_res.push(path[j]);
+            path_res.push(*path_elem);
         }
     }
     path_res
 }
 
-pub fn compare_paths(a: Vec<bool>, b: Vec<bool>) -> u32 {
+pub fn compare_paths(a: &[bool], b: &[bool]) -> u32 {
     for i in (0..a.len()).rev() {
         if a[i] != b[i] {
             return i as u32;
         }
     }
-    return 999;
+    999
 }
 
 pub fn get_empties_between_i_and_pos(i: u32, pos: u32) -> Vec<[u8;32]> {
