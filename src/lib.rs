@@ -284,6 +284,54 @@ impl MerkleTree {
       mp
    }
 }
+#[allow(dead_code)]
+pub fn verify_proof(root: [u8;32], mp: Vec<u8>, hi: [u8;32], ht: [u8;32], num_levels: u32) -> bool {
+   let mut empties: Vec<u8>;
+   empties = mp.split_at(32).0.to_vec();
+
+   let mut siblings: Vec<[u8;32]> = Vec::new();
+   for i in (empties.len()..mp.len()).step_by(EMPTYNODEVALUE.len()) {
+      let mut sibling: [u8;32] = [0;32];
+      sibling.copy_from_slice(&mp[i..i+EMPTYNODEVALUE.len()]);
+      siblings.push(sibling);
+   }
+
+   let path = utils::get_path(num_levels, hi);
+   let mut node_hash = ht;
+   let mut sibling_used_pos = 0;
+
+   for i in (0..num_levels-1).rev() {
+      let sibling: [u8;32];
+      if (empties[empties.len()-i as usize/8-1] & (1 << i%8)) > 0 {
+         sibling = siblings[sibling_used_pos];
+         sibling_used_pos = sibling_used_pos +1;
+      } else {
+         sibling = EMPTYNODEVALUE;
+      }
+
+      let n: node::TreeNode;
+      if path[num_levels as usize - i as usize-2] {
+         n = node::TreeNode {
+            child_l: sibling,
+            child_r: node_hash,
+         };
+      } else {
+         n = node::TreeNode {
+            child_l: node_hash,
+            child_r: sibling,
+         };
+      }
+      if node_hash == EMPTYNODEVALUE && sibling == EMPTYNODEVALUE {
+         node_hash = EMPTYNODEVALUE;
+      } else {
+         node_hash = n.ht();
+      }
+   }
+   if node_hash==root {
+      return true;
+   }
+   return false
+}
 
 
 #[cfg(test)]
@@ -354,7 +402,7 @@ impl MerkleTree {
           assert_eq!("8ac95e9c8a6fbd40bb21de7895ee35f9c8f30ca029dbb0972c02344f49462e82", mt.root.to_hex());
       }
       #[test]
-      fn test_generate_proof() {
+      fn test_generate_proof_and_verify_proof() {
           let mut mt: MerkleTree = new(140);
           let val = TestValue {
               bytes: "this is a test leaf".as_bytes().to_vec(),
@@ -376,10 +424,15 @@ impl MerkleTree {
       
           let hi = utils::hash_vec(val2.bytes().to_vec().split_at(val2.index_length as usize).0.to_vec());
           let mp = mt.generate_proof(hi);
-          assert_eq!("0000000000000000000000000000000000000000000000000000000000000001fd8e1a60cdb23c0c7b2cf8462c99fafd905054dccb0ed75e7c8a7d6806749b6b", mp.to_hex())
+          assert_eq!("0000000000000000000000000000000000000000000000000000000000000001fd8e1a60cdb23c0c7b2cf8462c99fafd905054dccb0ed75e7c8a7d6806749b6b", mp.to_hex());
+
+          // verify
+          let ht = utils::hash_vec(val2.bytes().to_vec());
+          let v = verify_proof(mt.root, mp, hi, ht, mt.num_levels);
+          assert_eq!(true, v);
       }
       #[test]
-      fn test_generate_proof_empty_leaf() {
+      fn test_generate_proof_empty_leaf_and_verify_proof() {
           let mut mt: MerkleTree = new(140);
           let val = TestValue {
               bytes: "this is a test leaf".as_bytes().to_vec(),
@@ -400,6 +453,10 @@ impl MerkleTree {
           };
           let hi = utils::hash_vec(val3.bytes().to_vec().split_at(val3.index_length as usize).0.to_vec());
           let mp = mt.generate_proof(hi);
-          assert_eq!("000000000000000000000000000000000000000000000000000000000000000389741fa23da77c259781ad8f4331a5a7d793eef1db7e5200ddfc8e5f5ca7ce2bfd8e1a60cdb23c0c7b2cf8462c99fafd905054dccb0ed75e7c8a7d6806749b6b", mp.to_hex())
+          assert_eq!("000000000000000000000000000000000000000000000000000000000000000389741fa23da77c259781ad8f4331a5a7d793eef1db7e5200ddfc8e5f5ca7ce2bfd8e1a60cdb23c0c7b2cf8462c99fafd905054dccb0ed75e7c8a7d6806749b6b", mp.to_hex());
+
+          // verify that is a proof of an empty leaf (EMPTYNODEVALUE)
+          let v = verify_proof(mt.root, mp, hi, EMPTYNODEVALUE, mt.num_levels);
+          assert_eq!(true, v);
       }
    }
