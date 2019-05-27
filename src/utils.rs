@@ -61,10 +61,10 @@ pub fn compare_paths(a: &[bool], b: &[bool]) -> u32 {
 
 pub fn get_empties_between_i_and_pos(i: u32, pos: u32) -> Vec<[u8;32]> {
     let mut sibl: Vec<[u8;32]> = Vec::new();
-    for _j in (pos..i).rev() {
+    for _ in (pos..i).rev() {
         sibl.push(::EMPTYNODEVALUE);
     }
-    sibl.to_vec()
+    sibl
 }
 
 #[cfg(test)]

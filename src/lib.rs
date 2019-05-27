@@ -7,6 +7,8 @@ extern crate tiny_keccak;
 
 extern crate rustc_hex;
 
+extern crate hex;
+
 mod utils;
 mod node;
 
@@ -23,6 +25,8 @@ pub struct TestValue {
 pub trait Value {
    fn bytes(&self) -> &Vec<u8>;
    fn index_length(&self) -> u32;
+   fn hi(&self) -> [u8;32];
+   fn ht(&self) -> [u8;32];
 }
 impl Value for TestValue {
    fn bytes(&self) -> &Vec<u8> {
@@ -30,6 +34,12 @@ impl Value for TestValue {
    }
    fn index_length(&self) -> u32 {
       self.index_length
+   }
+   fn hi(&self) -> [u8;32] {
+      utils::hash_vec(self.bytes().to_vec().split_at(self.index_length() as usize).0.to_vec())
+   }
+   fn ht(&self) -> [u8;32] {
+      utils::hash_vec(self.bytes().to_vec())
    }
 }
 
@@ -94,20 +104,19 @@ impl MerkleTree {
 
       // println!("adding value: {:?}", v.bytes());
       // add the leaf that we are adding
-      self.sto.insert(utils::hash_vec(v.bytes().to_vec()), TYPENODEVALUE, v.index_length(), &mut v.bytes().to_vec());
+      self.sto.insert(v.ht(), TYPENODEVALUE, v.index_length(), &mut v.bytes().to_vec());
 
       let index = v.index_length() as usize;
-      let hi = utils::hash_vec(v.bytes()[..index].to_vec());
-      let ht = utils::hash_vec(v.bytes().to_vec());
+      let hi = v.hi();
+      let ht = v.ht();
       let path = utils::get_path(self.num_levels, hi);
       let mut siblings: Vec<[u8;32]> = Vec::new();
 
 
       let mut node_hash = self.root;
 
-      for i in (0..self.num_levels-1).rev() {
+      for i in (0..=self.num_levels-2).rev() {
          // get node
-         // let (t, il, node_bytes) = self.sto.get(&utils::hash_vec(node_hash.to_vec()));
          let (t, il, node_bytes) = self.sto.get(&node_hash);
          if t == TYPENODEFINAL {
             let hi_child = utils::hash_vec(node_bytes.to_vec().split_at(il as usize).0.to_vec());
@@ -119,7 +128,7 @@ impl MerkleTree {
             }
             let final_node_1_hash = utils::calc_hash_from_leaf_and_level(pos_diff, &path_child, utils::hash_vec(node_bytes.to_vec()));
             self.sto.insert(final_node_1_hash, TYPENODEFINAL, il, &mut node_bytes.to_vec());
-            let final_node_2_hash = utils::calc_hash_from_leaf_and_level(pos_diff, &path, utils::hash_vec(v.bytes().to_vec()));
+            let final_node_2_hash = utils::calc_hash_from_leaf_and_level(pos_diff, &path, v.ht());
             self.sto.insert(final_node_2_hash, TYPENODEFINAL, v.index_length(), &mut v.bytes().to_vec());
 
             // parent node
@@ -137,6 +146,7 @@ impl MerkleTree {
             for empty in &empties {
                siblings.push(*empty);
             }
+
             let path_from_pos_diff = utils::cut_path(&path, (pos_diff +1) as usize);
             self.root = self.replace_leaf(path_from_pos_diff, siblings.clone(), parent_node.ht(), TYPENODENORMAL, 0, &mut parent_node.bytes().to_vec());
             return;
@@ -155,18 +165,18 @@ impl MerkleTree {
          siblings.push(*array_ref!(sibling, 0, 32));
          if node_hash == EMPTYNODEVALUE {
             if i==self.num_levels-2 && siblings[siblings.len()-1]==EMPTYNODEVALUE {
-               let final_node_hash = utils::calc_hash_from_leaf_and_level(i+1, &path, utils::hash_vec(v.bytes().to_vec()));
+               let final_node_hash = utils::calc_hash_from_leaf_and_level(i+1, &path, v.ht());
                self.sto.insert(final_node_hash, TYPENODEFINAL, v.index_length(), &mut v.bytes().to_vec());
                self.root = final_node_hash;
                return;
             }
-            let final_node_hash = utils::calc_hash_from_leaf_and_level(i, &path, utils::hash_vec(v.bytes().to_vec()));
+            let final_node_hash = utils::calc_hash_from_leaf_and_level(i, &path, v.ht());
             let path_from_i = utils::cut_path(&path, i as usize);
             self.root = self.replace_leaf(path_from_i, siblings.clone(), final_node_hash, TYPENODEFINAL, v.index_length(), &mut v.bytes().to_vec());
             return;
          }
       }
-      self.root = self.replace_leaf(path, siblings, utils::hash_vec(v.bytes().to_vec()), TYPENODEVALUE, v.index_length(), &mut v.bytes().to_vec());
+      self.root = self.replace_leaf(path, siblings, v.ht(), TYPENODEVALUE, v.index_length(), &mut v.bytes().to_vec());
    }
 
    #[allow(dead_code)]
@@ -198,7 +208,7 @@ impl MerkleTree {
    pub fn get_value_in_pos(&self, hi: [u8;32]) -> Vec<u8> {
       let path = utils::get_path(self.num_levels, hi);
       let mut node_hash = self.root;
-      for i in (0..self.num_levels-1).rev() {
+      for i in (0..=self.num_levels-2).rev() {
          let (t, il, node_bytes) = self.sto.get(&node_hash);
          if t == TYPENODEFINAL {
             let hi_node = utils::hash_vec(node_bytes.to_vec().split_at(il as usize).0.to_vec());
@@ -296,7 +306,7 @@ pub fn verify_proof(root: [u8;32], mp: Vec<u8>, hi: [u8;32], ht: [u8;32], num_le
    let mut node_hash = ht;
    let mut sibling_used_pos = 0;
 
-   for i in (0..num_levels-1).rev() {
+   for i in (0..=num_levels-2).rev() {
       let sibling: [u8;32];
       if (empties[empties.len()-i as usize/8-1] & (1 << (i%8))) > 0 {
          sibling = siblings[sibling_used_pos];
@@ -370,7 +380,7 @@ pub fn verify_proof(root: [u8;32], mp: Vec<u8>, hi: [u8;32], ht: [u8;32], num_le
             index_length: 3,
          };
          mt.add(&val);
-         let (_t, _il, b) = mt.sto.get(&utils::hash_vec(val.bytes().to_vec()));
+         let (_t, _il, b) = mt.sto.get(&val.ht());
          assert_eq!(*val.bytes(), b);
          assert_eq!("a0e72cc948119fcb71b413cf5ada12b2b825d5133299b20a6d9325ffc3e2fbf1", mt.root.to_hex());
       }
@@ -383,7 +393,7 @@ pub fn verify_proof(root: [u8;32], mp: Vec<u8>, hi: [u8;32], ht: [u8;32], num_le
           };
           assert_eq!("0000000000000000000000000000000000000000000000000000000000000000", mt.root.to_hex());
           mt.add(&val);
-          let (_t, _il, b) = mt.sto.get(&utils::hash_vec(val.bytes().to_vec()));
+          let (_t, _il, b) = mt.sto.get(&val.ht());
           assert_eq!(*val.bytes(), b);
           assert_eq!("b4fdf8a653198f0e179ccb3af7e4fc09d76247f479d6cfc95cd92d6fda589f27", mt.root.to_hex());
           let val2 = TestValue {
@@ -391,7 +401,7 @@ pub fn verify_proof(root: [u8;32], mp: Vec<u8>, hi: [u8;32], ht: [u8;32], num_le
               index_length: 15,
           };
           mt.add(&val2);
-          let (_t, _il, b) = mt.sto.get(&utils::hash_vec(val2.bytes().to_vec()));
+          let (_t, _il, b) = mt.sto.get(&val2.ht());
           assert_eq!(*val2.bytes(), b);
           assert_eq!("8ac95e9c8a6fbd40bb21de7895ee35f9c8f30ca029dbb0972c02344f49462e82", mt.root.to_hex());
       }
@@ -404,7 +414,7 @@ pub fn verify_proof(root: [u8;32], mp: Vec<u8>, hi: [u8;32], ht: [u8;32], num_le
           };
           assert_eq!("0000000000000000000000000000000000000000000000000000000000000000", mt.root.to_hex());
           mt.add(&val);
-          let (_t, _il, b) = mt.sto.get(&utils::hash_vec(val.bytes().to_vec()));
+          let (_t, _il, b) = mt.sto.get(&val.ht());
           assert_eq!(*val.bytes(), b);
           assert_eq!("b4fdf8a653198f0e179ccb3af7e4fc09d76247f479d6cfc95cd92d6fda589f27", mt.root.to_hex());
           let val2 = TestValue {
@@ -412,17 +422,15 @@ pub fn verify_proof(root: [u8;32], mp: Vec<u8>, hi: [u8;32], ht: [u8;32], num_le
               index_length: 15,
           };
           mt.add(&val2);
-          let (_t, _il, b) = mt.sto.get(&utils::hash_vec(val2.bytes().to_vec()));
+          let (_t, _il, b) = mt.sto.get(&val2.ht());
           assert_eq!(*val2.bytes(), b);
           assert_eq!("8ac95e9c8a6fbd40bb21de7895ee35f9c8f30ca029dbb0972c02344f49462e82", mt.root.to_hex());
       
-          let hi = utils::hash_vec(val2.bytes().to_vec().split_at(val2.index_length as usize).0.to_vec());
-          let mp = mt.generate_proof(hi);
+          let mp = mt.generate_proof(val2.hi());
           assert_eq!("0000000000000000000000000000000000000000000000000000000000000001fd8e1a60cdb23c0c7b2cf8462c99fafd905054dccb0ed75e7c8a7d6806749b6b", mp.to_hex());
 
           // verify
-          let ht = utils::hash_vec(val2.bytes().to_vec());
-          let v = verify_proof(mt.root, mp, hi, ht, mt.num_levels);
+          let v = verify_proof(mt.root, mp, val2.hi(), val2.ht(), mt.num_levels);
           assert_eq!(true, v);
       }
       #[test]
@@ -445,12 +453,35 @@ pub fn verify_proof(root: [u8;32], mp: Vec<u8>, hi: [u8;32], ht: [u8;32], num_le
               bytes: "this is a third test leaf".as_bytes().to_vec(),
               index_length: 15,
           };
-          let hi = utils::hash_vec(val3.bytes().to_vec().split_at(val3.index_length as usize).0.to_vec());
-          let mp = mt.generate_proof(hi);
+          let mp = mt.generate_proof(val3.hi());
           assert_eq!("000000000000000000000000000000000000000000000000000000000000000389741fa23da77c259781ad8f4331a5a7d793eef1db7e5200ddfc8e5f5ca7ce2bfd8e1a60cdb23c0c7b2cf8462c99fafd905054dccb0ed75e7c8a7d6806749b6b", mp.to_hex());
 
           // verify that is a proof of an empty leaf (EMPTYNODEVALUE)
-          let v = verify_proof(mt.root, mp, hi, EMPTYNODEVALUE, mt.num_levels);
+          let v = verify_proof(mt.root, mp, val3.hi(), EMPTYNODEVALUE, mt.num_levels);
+          assert_eq!(true, v);
+      }
+      #[test]
+      fn test_harcoded_proofs_of_existing_leaf() {
+         // check proof of value in leaf
+         let mut root: [u8;32] = [0;32];
+         root.copy_from_slice(&hex::decode("7d7c5e8f4b3bf434f3d9d223359c4415e2764dd38de2e025fbf986e976a7ed3d").unwrap());
+         let mp = hex::decode("0000000000000000000000000000000000000000000000000000000000000002d45aada6eec346222eaa6b5d3a9260e08c9b62fcf63c72bc05df284de07e6a52").unwrap();
+         let mut hi: [u8;32] = [0;32];
+         hi.copy_from_slice(&hex::decode("786677808ba77bdd9090a969f1ef2cbd1ac5aecd9e654f340500159219106878").unwrap());
+         let mut ht: [u8;32] = [0;32];
+         ht.copy_from_slice(&hex::decode("786677808ba77bdd9090a969f1ef2cbd1ac5aecd9e654f340500159219106878").unwrap());
+          let v = verify_proof(root, mp, hi, ht, 140);
+          assert_eq!(true, v);
+      }
+      #[test]
+      fn test_harcoded_proofs_of_empty_leaf() {
+         // check proof of value in leaf
+         let mut root: [u8;32] = [0;32];
+         root.copy_from_slice(&hex::decode("8f021d00c39dcd768974ddfe0d21f5d13f7215bea28db1f1cb29842b111332e7").unwrap());
+         let mp = hex::decode("0000000000000000000000000000000000000000000000000000000000000004bf8e980d2ed328ae97f65c30c25520aeb53ff837579e392ea1464934c7c1feb9").unwrap();
+         let mut hi: [u8;32] = [0;32];
+         hi.copy_from_slice(&hex::decode("a69792a4cff51f40b7a1f7ae596c6ded4aba241646a47538898f17f2a8dff647").unwrap());
+          let v = verify_proof(root, mp, hi, EMPTYNODEVALUE, 140);
           assert_eq!(true, v);
       }
    }
