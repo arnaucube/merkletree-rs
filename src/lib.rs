@@ -289,6 +289,55 @@ impl MerkleTree {
       }
       mp
    }
+   #[allow(dead_code)]
+   pub fn print_level(&self, parent: [u8;32], mut lvl: u32, max_level: u32) {
+      use rustc_hex::ToHex;
+
+      let mut line: String = "".to_string();
+      for _ in 0..lvl {
+         line += &"  ".to_string();
+      }
+      line += &("lvl ".to_string() + &lvl.to_string());
+      line += &(" - '".to_string() + &parent.to_hex() + &"' = ".to_string());
+      let (t, _, node_bytes) = self.sto.get(&parent);
+      let mut node = node::TreeNode {
+         child_l: EMPTYNODEVALUE,
+         child_r: EMPTYNODEVALUE,
+      };
+      if t==TYPENODENORMAL {
+         node = node::parse_node_bytes(node_bytes);
+         line += &("'".to_string() + &node.child_l.to_hex() + &"' - '".to_string() + &node.child_r.to_hex() + &"'".to_string());
+      } else if t == TYPENODEVALUE {
+         //
+      } else if t == TYPENODEFINAL {
+         let hash_node_bytes = utils::hash_vec(node_bytes);
+         line += &("[final] final tree node: ".to_string() + &hash_node_bytes.to_hex()+ &"\n".to_string());
+         let (_, _, leaf_node_bytes) = self.sto.get(&hash_node_bytes);
+         for _ in 0..lvl {
+            line += "  ";
+         }
+         let leaf_node_string = String::from_utf8_lossy(&leaf_node_bytes);
+         line += &("leaf value: ".to_string() + &leaf_node_string);
+      } else {
+         line += &"[EMPTY Branch]".to_string()
+      }
+      println!("{:?}", line);
+      lvl += 1;
+      if node.child_r.len()>0 && lvl<max_level && t != TYPENODEEMPTY && t != TYPENODEFINAL {
+         self.print_level(node.child_l, lvl, max_level);
+         self.print_level(node.child_r, lvl, max_level);
+      }
+   }
+   pub fn print_full_tree(&self) {
+      use rustc_hex::ToHex;
+      self.print_level(self.root, 0, self.num_levels - 1);
+      println!("root {:?}", self.root.to_hex());
+   }
+   pub fn print_levels_tree(&self, max_level: u32) {
+      use rustc_hex::ToHex;
+      self.print_level(self.root, 0, self.num_levels - 1 - max_level);
+      println!("root {:?}", self.root.to_hex());
+   }
 }
 #[allow(dead_code)]
 pub fn verify_proof(root: [u8;32], mp: Vec<u8>, hi: [u8;32], ht: [u8;32], num_levels: u32) -> bool {
@@ -404,6 +453,7 @@ pub fn verify_proof(root: [u8;32], mp: Vec<u8>, hi: [u8;32], ht: [u8;32], num_le
           let (_t, _il, b) = mt.sto.get(&val2.ht());
           assert_eq!(*val2.bytes(), b);
           assert_eq!("8ac95e9c8a6fbd40bb21de7895ee35f9c8f30ca029dbb0972c02344f49462e82", mt.root.to_hex());
+          mt.print_full_tree();
       }
       #[test]
       fn test_generate_proof_and_verify_proof() {
