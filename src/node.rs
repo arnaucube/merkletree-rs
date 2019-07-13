@@ -1,18 +1,16 @@
 use utils;
+use constants;
 
 
-#[allow(dead_code)]
 pub struct TreeNode {
     pub child_l: [u8;32],
     pub child_r: [u8;32],
 }
 
 impl TreeNode {
-    #[allow(dead_code)]
     pub fn bytes(&self) -> Vec<u8> {
         concatenate_arrays(&self.child_l, &self.child_r)
     }
-    #[allow(dead_code)]
     pub fn ht(&self) -> [u8;32] {
         utils::hash_vec(self.bytes())
     }
@@ -26,10 +24,10 @@ fn concatenate_arrays<T: Clone>(x: &[T], y: &[T]) -> Vec<T> {
 }
 
 pub fn parse_node_bytes(b: Vec<u8>) -> TreeNode {
-    if b==::EMPTYNODEVALUE {
+    if b==constants::EMPTYNODEVALUE {
         let n = TreeNode {
-            child_l: ::EMPTYNODEVALUE,
-            child_r: ::EMPTYNODEVALUE,
+            child_l: constants::EMPTYNODEVALUE,
+            child_r: constants::EMPTYNODEVALUE,
         };
         return n;
     }
@@ -50,8 +48,8 @@ mod tests {
     #[test]
     fn test_hash_vec() {
         let n = TreeNode {
-            child_l: ::EMPTYNODEVALUE,
-            child_r: ::EMPTYNODEVALUE,
+            child_l: constants::EMPTYNODEVALUE,
+            child_r: constants::EMPTYNODEVALUE,
         };
         assert_eq!("ad3228b676f7d3cd4284a5443f17f1962b36e491b30a40b2405849e597ba5fb5", n.ht().to_hex())
     }

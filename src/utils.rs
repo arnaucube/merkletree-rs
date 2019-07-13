@@ -1,5 +1,6 @@
 use node;
 use tiny_keccak::Keccak;
+use constants;
 
 pub fn hash_vec(b: Vec<u8>) -> [u8; 32] {
     let mut sha3 = Keccak::new_keccak256();
@@ -9,7 +10,6 @@ pub fn hash_vec(b: Vec<u8>) -> [u8; 32] {
     res
 }
 
-#[allow(dead_code)]
 pub fn get_path(num_levels: u32, hi: [u8;32]) -> Vec<bool> {
     let mut path = Vec::new();
     for i in (0..=num_levels as usize-2).rev() {
@@ -18,20 +18,19 @@ pub fn get_path(num_levels: u32, hi: [u8;32]) -> Vec<bool> {
     path
 }
 
-#[allow(dead_code)]
 pub fn calc_hash_from_leaf_and_level(until_level: u32, path: &[bool], leaf_hash: [u8;32]) -> [u8;32] {
     let mut node_curr_lvl = leaf_hash;
     for i in 0..until_level {
         if path[i as usize] {
             let node = node::TreeNode {
-                child_l: ::EMPTYNODEVALUE,
+                child_l: constants::EMPTYNODEVALUE,
                 child_r: node_curr_lvl,
             };
             node_curr_lvl = node.ht();
         } else {
             let node = node::TreeNode {
                 child_l: node_curr_lvl,
-                child_r: ::EMPTYNODEVALUE,
+                child_r: constants::EMPTYNODEVALUE,
             };
             node_curr_lvl = node.ht();
         }
@@ -61,7 +60,7 @@ pub fn compare_paths(a: &[bool], b: &[bool]) -> u32 {
 pub fn get_empties_between_i_and_pos(i: u32, pos: u32) -> Vec<[u8;32]> {
     let mut sibl: Vec<[u8;32]> = Vec::new();
     for _ in (pos..=i).rev() {
-        sibl.push(::EMPTYNODEVALUE);
+        sibl.push(constants::EMPTYNODEVALUE);
     }
     sibl
 }

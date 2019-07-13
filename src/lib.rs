@@ -1,24 +1,15 @@
-use std::collections::HashMap;
-
 #[macro_use]
 extern crate arrayref;
-
 extern crate tiny_keccak;
-
 extern crate rustc_hex;
-
 extern crate hex;
 
 use rustc_hex::ToHex;
 
 mod utils;
 mod node;
-
-const TYPENODEEMPTY: u8 = 0;
-const TYPENODENORMAL: u8 = 1;
-const TYPENODEFINAL: u8 = 2;
-const TYPENODEVALUE: u8 = 3;
-const EMPTYNODEVALUE: [u8;32] = [0;32];
+mod db;
+mod constants;
 
 pub struct TestValue {
    bytes: Vec<u8>,
@@ -45,72 +36,25 @@ impl Value for TestValue {
    }
 }
 
-#[allow(dead_code)]
-pub struct Db {
-   storage: HashMap<[u8;32], Vec<u8>>,
-}
-impl Db {
-   pub fn insert(&mut self, k: [u8; 32], t: u8, il: u32, b: Vec<u8>) {
-      let mut v: Vec<u8>;
-      v = [t].to_vec();
-      let il_bytes = il.to_le_bytes();
-      v.extend(il_bytes.to_vec()); // il_bytes are [u8;4] (4 bytes)
-      v.extend(&b);
-      self.storage.insert(k, v);
-   }
-   pub fn get(&self, k: &[u8;32]) -> (u8, u32, Vec<u8>) {
-      if k.to_vec() == EMPTYNODEVALUE.to_vec() {
-         return (0, 0, EMPTYNODEVALUE.to_vec());
-      }
-      match self.storage.get(k) {
-         Some(x) => {
-            let t = x[0];
-            let il_bytes: [u8; 4] = [x[1], x[2], x[3], x[4]];
-            let il = u32::from_le_bytes(il_bytes);
-            let b = &x[5..];
-            (t, il, b.to_vec())
-         },
-         None => (TYPENODEEMPTY, 0, EMPTYNODEVALUE.to_vec()),
-      }
-   }
-} 
-
-pub fn new_db()-> Db {
-   Db {
-      storage: HashMap::new(),
-   }
-}
-
-pub struct MerkleTree {
-   #[allow(dead_code)]
+pub struct MerkleTree<'a> {
    root: [u8; 32],
-   #[allow(dead_code)]
    num_levels: u32,
-   #[allow(dead_code)]
-   sto: Db,
+   sto: &'a mut db::Db,
 }
-
-
-pub fn new(num_levels: u32) -> MerkleTree {
-   MerkleTree {
-      root: EMPTYNODEVALUE,
-      num_levels,
-      sto: new_db(),
+impl<'a> MerkleTree<'a> {
+   pub fn new(database: &'a mut db::Db, num_levels: u32) -> MerkleTree<'a> {
+      MerkleTree{
+         root: constants::EMPTYNODEVALUE,
+         num_levels,
+         sto: database,
+      }
    }
-}
 
-impl MerkleTree {
    pub fn add(&mut self, v: &TestValue) {
-      #![allow(unused_variables)]
-      #[allow(dead_code)]
-
-      let leaf_node_string = String::from_utf8_lossy(&v.bytes());
       // add the leaf that we are adding
-      self.sto.insert(v.ht(), TYPENODEVALUE, v.index_length(), v.bytes().to_vec());
+      self.sto.insert(v.ht(), constants::TYPENODEVALUE, v.index_length(), v.bytes().to_vec());
 
-      let index = v.index_length() as usize;
       let hi = v.hi();
-      let ht = v.ht();
       let path = utils::get_path(self.num_levels, hi);
       let mut siblings: Vec<[u8;32]> = Vec::new();
 
@@ -120,7 +64,7 @@ impl MerkleTree {
       for i in (0..=self.num_levels-2).rev() {
          // get node
          let (t, il, node_bytes) = self.sto.get(&node_hash);
-         if t == TYPENODEFINAL {
+         if t == constants::TYPENODEFINAL {
             let hi_child = utils::hash_vec(node_bytes.to_vec().split_at(il as usize).0.to_vec());
             let path_child = utils::get_path(self.num_levels, hi_child);
             let pos_diff = utils::compare_paths(&path_child, &path);
@@ -130,9 +74,9 @@ impl MerkleTree {
                return;
             }
             let final_node_1_hash = utils::calc_hash_from_leaf_and_level(pos_diff, &path_child, utils::hash_vec(node_bytes.to_vec()));
-            self.sto.insert(final_node_1_hash, TYPENODEFINAL, il, node_bytes.to_vec());
+            self.sto.insert(final_node_1_hash, constants::TYPENODEFINAL, il, node_bytes.to_vec());
             let final_node_2_hash = utils::calc_hash_from_leaf_and_level(pos_diff, &path, v.ht());
-            self.sto.insert(final_node_2_hash, TYPENODEFINAL, v.index_length(), v.bytes().to_vec());
+            self.sto.insert(final_node_2_hash, constants::TYPENODEFINAL, v.index_length(), v.bytes().to_vec());
 
             // parent node
             let parent_node: node::TreeNode;
@@ -152,7 +96,7 @@ impl MerkleTree {
 
             let path_from_pos_diff = utils::cut_path(&path, (pos_diff + 1) as usize);
 
-            self.root = self.replace_leaf(path_from_pos_diff, &siblings, parent_node.ht(), TYPENODENORMAL, 0, parent_node.bytes().to_vec());
+            self.root = self.replace_leaf(path_from_pos_diff, &siblings, parent_node.ht(), constants::TYPENODENORMAL, 0, parent_node.bytes().to_vec());
             return;
          }
 
@@ -167,23 +111,22 @@ impl MerkleTree {
             node_hash = node.child_r;
          }
          siblings.push(*array_ref!(sibling, 0, 32));
-         if node_hash == EMPTYNODEVALUE {
-            if i==self.num_levels-2 && siblings[siblings.len()-1]==EMPTYNODEVALUE {
+         if node_hash == constants::EMPTYNODEVALUE {
+            if i==self.num_levels-2 && siblings[siblings.len()-1]==constants::EMPTYNODEVALUE {
                let final_node_hash = utils::calc_hash_from_leaf_and_level(i+1, &path, v.ht());
-               self.sto.insert(final_node_hash, TYPENODEFINAL, v.index_length(), v.bytes().to_vec());
+               self.sto.insert(final_node_hash, constants::TYPENODEFINAL, v.index_length(), v.bytes().to_vec());
                self.root = final_node_hash;
                return;
             }
             let final_node_hash = utils::calc_hash_from_leaf_and_level(i, &path, v.ht());
             let path_from_i = utils::cut_path(&path, i as usize);
-            self.root = self.replace_leaf(path_from_i, &siblings, final_node_hash, TYPENODEFINAL, v.index_length(), v.bytes().to_vec());
+            self.root = self.replace_leaf(path_from_i, &siblings, final_node_hash, constants::TYPENODEFINAL, v.index_length(), v.bytes().to_vec());
             return;
          }
       }
-      self.root = self.replace_leaf(path, &siblings, v.ht(), TYPENODEVALUE, v.index_length(), v.bytes().to_vec());
+      self.root = self.replace_leaf(path, &siblings, v.ht(), constants::TYPENODEVALUE, v.index_length(), v.bytes().to_vec());
    }
 
-   #[allow(dead_code)]
    pub fn replace_leaf(&mut self, path: Vec<bool>, siblings: &Vec<[u8;32]>, leaf_hash: [u8;32], node_type: u8, index_length: u32, leaf_value: Vec<u8>) -> [u8;32] {
       self.sto.insert(leaf_hash, node_type, index_length, leaf_value);
       let mut curr_node = leaf_hash;
@@ -194,33 +137,31 @@ impl MerkleTree {
                child_l: curr_node,
                child_r: siblings[siblings.len()-1-i],
             };
-            self.sto.insert(node.ht(), TYPENODENORMAL, 0, node.bytes());
+            self.sto.insert(node.ht(), constants::TYPENODENORMAL, 0, node.bytes());
             curr_node = node.ht();
          } else {
             let node = node::TreeNode {
                child_l: siblings[siblings.len()-1-i],
                child_r: curr_node,
             };
-            self.sto.insert(node.ht(), TYPENODENORMAL, 0, node.bytes());
+            self.sto.insert(node.ht(), constants::TYPENODENORMAL, 0, node.bytes());
             curr_node = node.ht();
          }
       }
       curr_node
    }
 
-   #[allow(dead_code)]
-   pub fn get_value_in_pos(&self, hi: [u8;32]) -> Vec<u8> {
+   pub fn get_value_in_pos(&mut self, hi: [u8;32]) -> Vec<u8> {
       let path = utils::get_path(self.num_levels, hi);
       let mut node_hash = self.root;
       for i in (0..=self.num_levels-2).rev() {
          let (t, il, node_bytes) = self.sto.get(&node_hash);
-         if t == TYPENODEFINAL {
+         if t == constants::TYPENODEFINAL {
             let hi_node = utils::hash_vec(node_bytes.to_vec().split_at(il as usize).0.to_vec());
             let path_node = utils::get_path(self.num_levels, hi_node);
             let pos_diff = utils::compare_paths(&path_node, &path);
-            // if pos_diff > self.num_levels {
             if pos_diff != 999 {
-               return EMPTYNODEVALUE.to_vec();
+               return constants::EMPTYNODEVALUE.to_vec();
             }
             return node_bytes;
          }
@@ -235,8 +176,7 @@ impl MerkleTree {
          node_bytes
       }
 
-      #[allow(dead_code)]
-      pub fn generate_proof(&self, hi: [u8;32]) -> Vec<u8> {
+      pub fn generate_proof(&mut self, hi: [u8;32]) -> Vec<u8> {
          let mut mp: Vec<u8> = Vec::new();
 
          let mut empties: [u8;32] = [0;32];
@@ -247,13 +187,13 @@ impl MerkleTree {
 
          for i in 0..self.num_levels {
             let (t, il, node_bytes) = self.sto.get(&node_hash);
-            if t == TYPENODEFINAL {
+            if t == constants::TYPENODEFINAL {
                let real_value_in_pos = self.get_value_in_pos(hi);
-               if real_value_in_pos == EMPTYNODEVALUE {
+               if real_value_in_pos == constants::EMPTYNODEVALUE {
                   let leaf_hi = utils::hash_vec(node_bytes.to_vec().split_at(il as usize).0.to_vec());
                   let path_child = utils::get_path(self.num_levels, leaf_hi);
                   let pos_diff = utils::compare_paths(&path_child, &path);
-                  if pos_diff == self.num_levels { // TODO use a match here, and instead of 999 return something better
+                  if pos_diff == self.num_levels { // TODO
                      return mp;
                   }
                   if pos_diff != self.num_levels-1-i {
@@ -278,7 +218,7 @@ impl MerkleTree {
                sibling = node.child_l;
                node_hash = node.child_r;
             }
-            if sibling != EMPTYNODEVALUE {
+            if sibling != constants::EMPTYNODEVALUE {
                // set empties bit
                empties[(empties.len() as isize + (i as isize/8-1) as isize) as usize] |= 1 << (i%8);
                let mut new_siblings: Vec<[u8;32]> = Vec::new();
@@ -293,8 +233,8 @@ impl MerkleTree {
          }
          mp
       }
-      #[allow(dead_code)]
-      pub fn print_level(&self, parent: [u8;32], mut lvl: u32, max_level: u32) {
+
+      pub fn print_level(&mut self, parent: [u8;32], mut lvl: u32, max_level: u32) {
          let mut line: String = "".to_string();
          for _ in 0..lvl {
             line += &format!(" ");
@@ -303,15 +243,15 @@ impl MerkleTree {
          line += &format!(" - '{}'  = ", parent.to_hex());
          let (t, _, node_bytes) = self.sto.get(&parent);
          let mut node = node::TreeNode {
-            child_l: EMPTYNODEVALUE,
-            child_r: EMPTYNODEVALUE,
+            child_l: constants::EMPTYNODEVALUE,
+            child_r: constants::EMPTYNODEVALUE,
          };
-         if t==TYPENODENORMAL {
+         if t==constants::TYPENODENORMAL {
             node = node::parse_node_bytes(node_bytes);
             line += &format!("'{}' - '{}'", node.child_l.to_hex(), node.child_r.to_hex());
-         } else if t == TYPENODEVALUE {
+         } else if t == constants::TYPENODEVALUE {
             //
-         } else if t == TYPENODEFINAL {
+         } else if t == constants::TYPENODEFINAL {
             let hash_node_bytes = utils::hash_vec(node_bytes);
             line += &format!("[final] final tree node: {} \n", hash_node_bytes.to_hex());
             let (_, _, leaf_node_bytes) = self.sto.get(&hash_node_bytes);
@@ -325,29 +265,33 @@ impl MerkleTree {
          }
          println!("{}", line);
          lvl += 1;
-         if node.child_r.len()>0 && lvl<max_level && t != TYPENODEEMPTY && t != TYPENODEFINAL {
+         if node.child_r.len()>0 && lvl<max_level && t != constants::TYPENODEEMPTY && t != constants::TYPENODEFINAL {
             self.print_level(node.child_l, lvl, max_level);
             self.print_level(node.child_r, lvl, max_level);
          }
       }
-      pub fn print_full_tree(&self) {
-         self.print_level(self.root, 0, self.num_levels - 1);
-         println!("root {:?}", self.root.to_hex());
+      pub fn print_full_tree(&mut self) {
+         let root = self.root.clone();
+         let num_levels = self.num_levels.clone();
+         self.print_level(root, 0, num_levels - 1);
+         println!("root {:?}", &self.root.to_hex());
       }
-      pub fn print_levels_tree(&self, max_level: u32) {
-         self.print_level(self.root, 0, self.num_levels - 1 - max_level);
+      pub fn print_levels_tree(&mut self, max_level: u32) {
+         let root = self.root.clone();
+         let num_levels = self.num_levels.clone();
+         self.print_level(root, 0, num_levels - 1 - max_level);
          println!("root {:?}", self.root.to_hex());
       }
    }
-#[allow(dead_code)]
+
    pub fn verify_proof(root: [u8;32], mp: Vec<u8>, hi: [u8;32], ht: [u8;32], num_levels: u32) -> bool {
       let empties: Vec<u8>;
       empties = mp.split_at(32).0.to_vec();
 
       let mut siblings: Vec<[u8;32]> = Vec::new();
-      for i in (empties.len()..mp.len()).step_by(EMPTYNODEVALUE.len()) {
+      for i in (empties.len()..mp.len()).step_by(constants::EMPTYNODEVALUE.len()) {
          let mut sibling: [u8;32] = [0;32];
-         sibling.copy_from_slice(&mp[i..i+EMPTYNODEVALUE.len()]);
+         sibling.copy_from_slice(&mp[i..i+constants::EMPTYNODEVALUE.len()]);
          siblings.push(sibling);
       }
 
@@ -361,7 +305,7 @@ impl MerkleTree {
             sibling = siblings[sibling_used_pos];
             sibling_used_pos += 1;
          } else {
-            sibling = EMPTYNODEVALUE;
+            sibling = constants::EMPTYNODEVALUE;
          }
 
          let n: node::TreeNode;
@@ -374,8 +318,8 @@ impl MerkleTree {
                   child_l: node_hash,
                   child_r: sibling,
                }}
-         if node_hash == EMPTYNODEVALUE && sibling == EMPTYNODEVALUE {
-            node_hash = EMPTYNODEVALUE;
+         if node_hash == constants::EMPTYNODEVALUE && sibling == constants::EMPTYNODEVALUE {
+            node_hash = constants::EMPTYNODEVALUE;
          } else {
             node_hash = n.ht();
          }
@@ -394,20 +338,20 @@ impl MerkleTree {
 
       #[test]
       fn test_hash_vec() {
-         let a: Vec<u8> = From::from("test");
+         let a: Vec<u8> = From::from("test".to_string());
          let h = utils::hash_vec(a);
          assert_eq!("9c22ff5f21f0b81b113e63f7db6da94fedef11b2119b4088b89664fb9a3cb658", h.to_hex());
       }
 
       #[test]
       fn test_new_mt() {
-         let mt: MerkleTree = new(140);
+          let mut sto = db::Db::new("test".to_string(), true);
+         let mt = MerkleTree::new(&mut sto, 140);
          assert_eq!(140, mt.num_levels);
          assert_eq!("0000000000000000000000000000000000000000000000000000000000000000", mt.root.to_hex());
          let (_t, _il, b) = mt.sto.get(&[0;32]);
          assert_eq!(mt.root.to_vec(), b);
       }
-
 
       #[test]
       fn test_tree_node() {
@@ -422,7 +366,8 @@ impl MerkleTree {
 
       #[test]
       fn test_add() {
-         let mut mt: MerkleTree = new(140);
+          let mut sto = db::Db::new("test".to_string(), true);
+         let mut mt = MerkleTree::new(&mut sto, 140);
          assert_eq!("0000000000000000000000000000000000000000000000000000000000000000", mt.root.to_hex());
          let val = TestValue {
             bytes: vec![1,2,3,4,5],
@@ -436,7 +381,8 @@ impl MerkleTree {
 
       #[test]
       fn test_add_2() {
-         let mut mt: MerkleTree = new(140);
+          let mut sto = db::Db::new("test".to_string(), true);
+         let mut mt = MerkleTree::new(&mut sto, 140);
          let val = TestValue {
             bytes: "this is a test leaf".as_bytes().to_vec(),
             index_length: 15,
@@ -458,7 +404,8 @@ impl MerkleTree {
 
       #[test]
       fn test_generate_proof_and_verify_proof() {
-         let mut mt: MerkleTree = new(140);
+          let mut sto = db::Db::new("test".to_string(), true);
+         let mut mt = MerkleTree::new(&mut sto, 140);
          let val = TestValue {
             bytes: "this is a test leaf".as_bytes().to_vec(),
             index_length: 15,
@@ -487,7 +434,8 @@ impl MerkleTree {
 
       #[test]
       fn test_generate_proof_empty_leaf_and_verify_proof() {
-         let mut mt: MerkleTree = new(140);
+          let mut sto = db::Db::new("test".to_string(), true);
+         let mut mt = MerkleTree::new(&mut sto, 140);
          let val = TestValue {
             bytes: "this is a test leaf".as_bytes().to_vec(),
             index_length: 15,
@@ -508,8 +456,8 @@ impl MerkleTree {
          let mp = mt.generate_proof(val3.hi());
          assert_eq!("000000000000000000000000000000000000000000000000000000000000000389741fa23da77c259781ad8f4331a5a7d793eef1db7e5200ddfc8e5f5ca7ce2bfd8e1a60cdb23c0c7b2cf8462c99fafd905054dccb0ed75e7c8a7d6806749b6b", mp.to_hex());
 
-         // verify that is a proof of an empty leaf (EMPTYNODEVALUE)
-         let v = verify_proof(mt.root, mp, val3.hi(), EMPTYNODEVALUE, mt.num_levels);
+         // verify that is a proof of an empty leaf (constants::EMPTYNODEVALUE)
+         let v = verify_proof(mt.root, mp, val3.hi(), constants::EMPTYNODEVALUE, mt.num_levels);
          assert_eq!(true, v);
       }
 
@@ -535,38 +483,41 @@ impl MerkleTree {
          let mp = hex::decode("0000000000000000000000000000000000000000000000000000000000000004bf8e980d2ed328ae97f65c30c25520aeb53ff837579e392ea1464934c7c1feb9").unwrap();
          let mut hi: [u8;32] = [0;32];
          hi.copy_from_slice(&hex::decode("a69792a4cff51f40b7a1f7ae596c6ded4aba241646a47538898f17f2a8dff647").unwrap());
-         let v = verify_proof(root, mp, hi, EMPTYNODEVALUE, 140);
+         let v = verify_proof(root, mp, hi, constants::EMPTYNODEVALUE, 140);
          assert_eq!(true, v);
       }
 
       #[test]
       fn test_add_leafs_different_order() {
-         let mut mt1: MerkleTree = new(140);
+          let mut sto1 = db::Db::new("test".to_string(), true);
+         let mut mt1 = MerkleTree::new(&mut sto1, 140);
          mt1.add(&TestValue {bytes: "0 this is a test leaf".as_bytes().to_vec(), index_length: 15,});
          mt1.add(&TestValue {bytes: "1 this is a test leaf".as_bytes().to_vec(), index_length: 15,});
          mt1.add(&TestValue {bytes: "2 this is a test leaf".as_bytes().to_vec(), index_length: 15,});
          mt1.add(&TestValue {bytes: "3 this is a test leaf".as_bytes().to_vec(), index_length: 15,});
          mt1.add(&TestValue {bytes: "4 this is a test leaf".as_bytes().to_vec(), index_length: 15,});
          mt1.add(&TestValue {bytes: "5 this is a test leaf".as_bytes().to_vec(), index_length: 15,});
-         mt1.print_full_tree();
+         // mt1.print_full_tree();
 
 
-         let mut mt2: MerkleTree = new(140);
+          let mut sto2 = db::Db::new("test".to_string(), true);
+         let mut mt2 = MerkleTree::new(&mut sto2, 140);
          mt2.add(&TestValue {bytes: "2 this is a test leaf".as_bytes().to_vec(), index_length: 15,});
          mt2.add(&TestValue {bytes: "1 this is a test leaf".as_bytes().to_vec(), index_length: 15,});
          mt2.add(&TestValue {bytes: "0 this is a test leaf".as_bytes().to_vec(), index_length: 15,});
          mt2.add(&TestValue {bytes: "5 this is a test leaf".as_bytes().to_vec(), index_length: 15,});
          mt2.add(&TestValue {bytes: "3 this is a test leaf".as_bytes().to_vec(), index_length: 15,});
          mt2.add(&TestValue {bytes: "4 this is a test leaf".as_bytes().to_vec(), index_length: 15,});
-         mt2.print_full_tree();
+         // mt2.print_full_tree();
 
          assert_eq!(mt1.root, mt2.root);
-         assert_eq!(mt1.root.to_hex(), "264397f84da141b3134dcde1d7540d27a2bf0d787bbe8365d9ad5c9c18d3c621");
+         assert_eq!(&mt1.root.to_hex(), "264397f84da141b3134dcde1d7540d27a2bf0d787bbe8365d9ad5c9c18d3c621");
       }
 
       #[test]
       fn test_add_1000_leafs() {
-         let mut mt: MerkleTree = new(140);
+         let mut sto = db::Db::new("test".to_string(), true);
+         let mut mt = MerkleTree::new(&mut sto, 140);
          for i in 0..1000 {
             mt.add(&TestValue {bytes: (i.to_string()+" this is a test leaf").as_bytes().to_vec(), index_length: 15,});
          }

@@ -9,7 +9,9 @@ Compatible with the Go version: https://github.com/arnaucube/go-merkletree
 ## Usage
 Create new tree:
 ```rust
-let mut mt: MerkleTree = new(140);
+// to build the storage, the first parameter is the path and the second parameter specifies if wants to use a in_memory database or a directory of the filesystem
+let mut sto = db::Db::new("test".to_string(), true);
+let mut mt: MerkleTree::new(&mut sto, 140);
 ```
 
 Add value to leaf:
@@ -31,6 +33,6 @@ Verify proof:
 // check if the value exist
 let v = verify_proof(mt.root, mp, val.hi(), val.ht(), mt.num_levels);
 
-// check if the don't value exist
+// check if the don't value exist (in that case, the 'ht' will be an empty value)
 let v = verify_proof(mt.root, mp, val.hi(), EMPTYNODEVALUE, mt.num_levels);
 ```
