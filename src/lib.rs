@@ -6,10 +6,10 @@ extern crate tiny_keccak;
 
 use rustc_hex::ToHex;
 
-mod constants;
-mod db;
-mod node;
-mod utils;
+pub mod constants;
+pub mod db;
+pub mod node;
+pub mod utils;
 
 type Result<T> = std::result::Result<T, String>;
 

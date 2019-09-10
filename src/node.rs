@@ -1,5 +1,5 @@
-use constants;
-use utils;
+use super::constants;
+use super::utils;
 
 pub struct TreeNode {
     pub child_l: [u8; 32],

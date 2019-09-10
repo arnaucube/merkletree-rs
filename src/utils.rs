@@ -1,5 +1,5 @@
-use constants;
-use node;
+use super::constants;
+use super::node;
 use tiny_keccak::Keccak;
 
 pub fn hash_vec(b: Vec<u8>) -> [u8; 32] {

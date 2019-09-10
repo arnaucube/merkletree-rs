@@ -1,7 +1,12 @@
 [package]
 name = "merkletree-rs"
 version = "0.0.1"
-authors = ["arnaucube <arnaucube@gmail.com>"]
+authors = ["arnaucube <root@arnaucube.com>"]
+edition = "2018"
+license = "GPL-3.0"
+description = "Sparse MerkleTree"
+repository = "https://github.com/arnaucube/merkletree-rs"
+readme = "README.md"
 
 [dependencies]
 tiny-keccak = "1.4.2"

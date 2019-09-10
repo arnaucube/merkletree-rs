@@ -2,7 +2,7 @@ extern crate rusty_leveldb;
 
 use self::rusty_leveldb::DB;
 
-use constants;
+use super::constants;
 
 pub struct Db {
     storage: DB,
