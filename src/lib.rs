@@ -14,8 +14,8 @@ pub mod utils;
 type Result<T> = std::result::Result<T, String>;
 
 pub struct TestValue {
-    bytes: Vec<u8>,
-    index_length: u32,
+    pub bytes: Vec<u8>,
+    pub index_length: u32,
 }
 pub trait Value {
     fn bytes(&self) -> &Vec<u8>;
@@ -56,6 +56,12 @@ impl<'a> MerkleTree<'a> {
             num_levels,
             sto: database,
         }
+    }
+    pub fn get_root(&mut self) -> [u8; 32] {
+        self.root
+    }
+    pub fn get_num_levels(&mut self) -> u32 {
+        self.num_levels
     }
 
     pub fn add(&mut self, v: &TestValue) -> Result<()> {
@@ -366,7 +372,7 @@ impl<'a> MerkleTree<'a> {
 
 pub fn verify_proof(
     root: [u8; 32],
-    mp: Vec<u8>,
+    mp: &Vec<u8>,
     hi: [u8; 32],
     ht: [u8; 32],
     num_levels: u32,
@@ -548,7 +554,7 @@ mod tests {
         assert_eq!("0000000000000000000000000000000000000000000000000000000000000001fd8e1a60cdb23c0c7b2cf8462c99fafd905054dccb0ed75e7c8a7d6806749b6b", mp.to_hex());
 
         // verify
-        let v = verify_proof(mt.root, mp, val2.hi(), val2.ht(), mt.num_levels);
+        let v = verify_proof(mt.root, &mp, val2.hi(), val2.ht(), mt.num_levels);
         assert_eq!(true, v);
     }
 
@@ -582,7 +588,7 @@ mod tests {
         // verify that is a proof of an empty leaf (constants::EMPTYNODEVALUE)
         let v = verify_proof(
             mt.root,
-            mp,
+            &mp,
             val3.hi(),
             constants::EMPTYNODEVALUE,
             mt.num_levels,
@@ -609,7 +615,7 @@ mod tests {
             &hex::decode("786677808ba77bdd9090a969f1ef2cbd1ac5aecd9e654f340500159219106878")
                 .unwrap(),
         );
-        let v = verify_proof(root, mp, hi, ht, 140);
+        let v = verify_proof(root, &mp, hi, ht, 140);
         assert_eq!(true, v);
     }
 
@@ -627,7 +633,7 @@ mod tests {
             &hex::decode("a69792a4cff51f40b7a1f7ae596c6ded4aba241646a47538898f17f2a8dff647")
                 .unwrap(),
         );
-        let v = verify_proof(root, mp, hi, constants::EMPTYNODEVALUE, 140);
+        let v = verify_proof(root, &mp, hi, constants::EMPTYNODEVALUE, 140);
         assert_eq!(true, v);
     }
 
