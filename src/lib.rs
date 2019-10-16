@@ -48,13 +48,20 @@ pub struct MerkleTree<'a> {
     root: [u8; 32],
     num_levels: u32,
     sto: &'a mut db::Db,
+    root_node_key: [u8;32],
 }
 impl<'a> MerkleTree<'a> {
     pub fn new(database: &'a mut db::Db, num_levels: u32) -> MerkleTree<'a> {
+        let rnk: [u8; 32] = utils::hash_vec("root".as_bytes().to_vec());
+        let (_, _, root_vec) = database.get(&rnk);
+        let mut root: [u8; 32] = [0;32];
+        root.copy_from_slice(&root_vec); // root will be [0;32] if not found (EMPTYNODEVALUE)
+
         MerkleTree {
-            root: constants::EMPTYNODEVALUE,
+            root: root,
             num_levels,
             sto: database,
+            root_node_key: rnk,
         }
     }
     pub fn get_root(&mut self) -> [u8; 32] {
@@ -138,6 +145,8 @@ impl<'a> MerkleTree<'a> {
                     0,
                     parent_node.bytes().to_vec(),
                 );
+                self.sto
+                    .insert(self.root_node_key, constants::TYPENODEROOT, 0, self.root.to_vec());
                 return Ok(());
             }
 
@@ -165,6 +174,8 @@ impl<'a> MerkleTree<'a> {
                         v.bytes().to_vec(),
                     );
                     self.root = final_node_hash;
+                    self.sto
+                        .insert(self.root_node_key, constants::TYPENODEROOT, 0, self.root.to_vec());
                     return Ok(());
                 }
                 let final_node_hash = utils::calc_hash_from_leaf_and_level(i, &path, v.ht());
@@ -177,6 +188,8 @@ impl<'a> MerkleTree<'a> {
                     v.index_length(),
                     v.bytes().to_vec(),
                 );
+                self.sto
+                    .insert(self.root_node_key, constants::TYPENODEROOT, 0, self.root.to_vec());
                 return Ok(());
             }
         }
@@ -188,6 +201,8 @@ impl<'a> MerkleTree<'a> {
             v.index_length(),
             v.bytes().to_vec(),
         );
+        self.sto
+            .insert(self.root_node_key, constants::TYPENODEROOT, 0, self.root.to_vec());
         return Ok(());
     }
 
@@ -728,6 +743,28 @@ mod tests {
         assert_eq!(
             mt.root.to_hex(),
             "6e2da580b2920cd78ed8d4e4bf41e209dfc99ef28bc19560042f0ac803e0d6f7"
+        );
+    }
+
+    #[test]
+    fn test_get_root_in_db() {
+        let mut sto = db::Db::new("test".to_string(), true);
+        let mut mt = MerkleTree::new(&mut sto, 140);
+        for i in 0..10 {
+            mt.add(&TestValue {
+                bytes: (i.to_string() + " this is a test leaf").as_bytes().to_vec(),
+                index_length: 15,
+            })
+            .unwrap();
+        }
+        assert_eq!(
+            mt.root.to_hex(),
+            "9418fd35bae19de4ab033efaf7cc624adf6a42827e39029d8da13288e9c3170d"
+        );
+        let mt2 = MerkleTree::new(&mut sto, 140);
+        assert_eq!(
+            mt2.root.to_hex(),
+            "9418fd35bae19de4ab033efaf7cc624adf6a42827e39029d8da13288e9c3170d"
         );
     }
 }
